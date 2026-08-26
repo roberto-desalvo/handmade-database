@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="RDS.Database.Console/RDS.Database.Console.csproj" />
+  <Project Path="RDS.Database.Tests/RDS.Database.Tests.csproj" />
+</Solution>
