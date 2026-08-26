@@ -1,11 +1,213 @@
-﻿using RDS.Database.Console.Services;
+using RDS.Database.Console.Services;
+using RDS.Database.Console.Services.Models;
 using RDS.Database.Console.Services.Utilities;
 
 namespace RDS.Database.Tests
 {
     public class PageTests
     {
-        
+        [Fact]
+        public void Page_GetRecordCount_WhenPageIsNotInitialized_ShouldThrow()
+        {
+            var page = new Page(new byte[4096]);
+
+            InvalidOperationException? thrown = null;
+            try
+            {
+                page.GetRecordCount();
+            }
+            catch (InvalidOperationException ex)
+            {
+                thrown = ex;
+            }
+            Assert.NotNull(thrown);
+        }
+
+        [Fact]
+        public void Page_Read_WhenIndexIsNegativeOrOutOfRange_ShouldThrow()
+        {
+            var page = new Page(new byte[4096]);
+            page.Init();
+            page.Insert(new byte[] { 1 });
+
+            ArgumentOutOfRangeException? thrownForNegative = null;
+            try
+            {
+                page.Read(-1);
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                thrownForNegative = ex;
+            }
+            Assert.NotNull(thrownForNegative);
+
+            ArgumentOutOfRangeException? thrownForOutOfRange = null;
+            try
+            {
+                page.Read(1);
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                thrownForOutOfRange = ex;
+            }
+            Assert.NotNull(thrownForOutOfRange);
+        }
+
+        [Fact]
+        public void Page_NextPageIndex_WhenNotSet_DefaultsToZero_AndCanBeSetAndRead()
+        {
+            var page = new Page(new byte[4096]);
+            page.Init();
+
+            Assert.Equal(0, page.GetNextPageIndex());
+
+            page.SetNextPageIndex(7);
+
+            Assert.Equal(7, page.GetNextPageIndex());
+        }
+
+        [Fact]
+        public void Page_SetNextPageIndex_WhenZeroOrNegative_ShouldThrow()
+        {
+            var page = new Page(new byte[4096]);
+            page.Init();
+
+            ArgumentOutOfRangeException? thrownForZero = null;
+            try
+            {
+                page.SetNextPageIndex(0);
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                thrownForZero = ex;
+            }
+            Assert.NotNull(thrownForZero);
+
+            ArgumentOutOfRangeException? thrownForNegative = null;
+            try
+            {
+                page.SetNextPageIndex(-1);
+            }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                thrownForNegative = ex;
+            }
+            Assert.NotNull(thrownForNegative);
+        }
+
+        [Fact]
+        public void Page_Forwarding_MarkReadAndDetect_ShouldWorkCorrectly()
+        {
+            var page = new Page(new byte[4096]);
+            page.Init();
+
+            var insertedIndex = page.Insert(new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+
+            Assert.False(page.IsForwarding(insertedIndex));
+
+            page.MarkAsForwarded(new RecordIdentifier(5, 2), insertedIndex);
+
+            Assert.True(page.IsForwarding(insertedIndex));
+
+            var rid = page.ReadForwarding(insertedIndex);
+            Assert.Equal(5, rid.PageIndex);
+            Assert.Equal(2, rid.SlotIndex);
+
+            // Leggere un record marcato come forwarding non è supportato direttamente da Read
+            ApplicationException? thrown = null;
+            try
+            {
+                page.Read(insertedIndex);
+            }
+            catch (ApplicationException ex)
+            {
+                thrown = ex;
+            }
+            Assert.NotNull(thrown);
+        }
+
+        [Fact]
+        public void Page_ReadForwarding_WhenRecordIsNotForwarding_ShouldThrow()
+        {
+            var page = new Page(new byte[4096]);
+            page.Init();
+
+            var insertedIndex = page.Insert(new byte[] { 1, 2, 3 });
+
+            InvalidOperationException? thrown = null;
+            try
+            {
+                page.ReadForwarding(insertedIndex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                thrown = ex;
+            }
+            Assert.NotNull(thrown);
+        }
+
+        [Fact]
+        public void Page_MarkAsForwarded_WhenRecordIsTooSmallToHoldPointer_ButPageHasSpace_ShouldSucceedViaCompaction()
+        {
+            var page = new Page(new byte[4096]);
+            page.Init();
+
+            // Il record ha meno byte di FORWARDING_RID_SIZE: non c'è spazio per scriverci il puntatore
+            // in-place, ma la pagina è per il resto vuota, quindi la compattazione (che qui è un no-op,
+            // dato che non c'è nulla da compattare) libera comunque spazio sufficiente.
+            var insertedIndex = page.Insert(new byte[] { 1, 2, 3 });
+
+            page.MarkAsForwarded(new RecordIdentifier(2, 0), insertedIndex);
+
+            Assert.True(page.IsForwarding(insertedIndex));
+            var rid = page.ReadForwarding(insertedIndex);
+            Assert.Equal(2, rid.PageIndex);
+            Assert.Equal(0, rid.SlotIndex);
+        }
+
+        [Fact]
+        public void Page_TryUpdate_WhenRecordIsDeleted_ShouldThrow()
+        {
+            var page = new Page(new byte[4096]);
+            page.Init();
+
+            var insertedIndex = page.Insert(new byte[] { 1, 2, 3 });
+            page.Delete(insertedIndex);
+
+            InvalidOperationException? thrown = null;
+            try
+            {
+                page.TryUpdate(insertedIndex, new byte[] { 9 });
+            }
+            catch (InvalidOperationException ex)
+            {
+                thrown = ex;
+            }
+            Assert.NotNull(thrown);
+        }
+
+        [Fact]
+        public void Page_TryUpdate_WhenRecordIsForwarding_ShouldThrow()
+        {
+            var page = new Page(new byte[4096]);
+            page.Init();
+
+            var insertedIndex = page.Insert(new byte[] { 1, 2, 3, 4, 5, 6 });
+            page.MarkAsForwarded(new RecordIdentifier(3, 1), insertedIndex);
+
+            InvalidOperationException? thrown = null;
+            try
+            {
+                page.TryUpdate(insertedIndex, new byte[] { 9 });
+            }
+            catch (InvalidOperationException ex)
+            {
+                thrown = ex;
+            }
+            Assert.NotNull(thrown);
+        }
+
+
         [Fact]
         public void Page_Insert_WhenThereIsSpace_ShouldInsert()
         {
@@ -81,7 +283,7 @@ namespace RDS.Database.Tests
 
             var byteSize = Constants.PAGE_SIZE - Constants.PAGE_HEADER_SIZE - (iterazioni * toInsertSize) - (iterazioni * Constants.PAGE_SLOT_SIZE) - Constants.PAGE_SLOT_SIZE; // 4 byte sono dello slot
 
-            var insertedIndex = page.Insert(new byte[byteSize]); 
+            var insertedIndex = page.Insert(new byte[byteSize]);
 
             Assert.Equal(iterazioni, insertedIndex); // inserisce con indice 100
 

@@ -17,7 +17,7 @@ namespace RDS.Database.Console.Services
         public readonly ReadOnlySpan<byte> Data => _data;
 
         #region Private Methods
-        private readonly ushort GetNextRecordOffset()
+        private readonly ushort GetDataAreaEndOffset()
          => BinaryPrimitives.ReadUInt16LittleEndian(_data.Slice(3, 2));
 
         private readonly void SetRecordCount(ushort count)
@@ -62,8 +62,75 @@ namespace RDS.Database.Console.Services
         private readonly int GetContiguousFreeSpace()
         {
             // totale - header - slot - (totale - offset del prossimo record = la parte finale occupata dai record)
-            var occupiedSpace = Constants.PAGE_HEADER_SIZE + (_recordCount * Constants.PAGE_SLOT_SIZE) + (Constants.PAGE_SIZE - GetNextRecordOffset());
+            var occupiedSpace = Constants.PAGE_HEADER_SIZE + (_recordCount * Constants.PAGE_SLOT_SIZE) + (Constants.PAGE_SIZE - GetDataAreaEndOffset());
             return Constants.PAGE_SIZE - occupiedSpace;
+        }
+
+        private readonly int GetTotalFreeSpace()
+        {
+            int dataOccupiedSpace = 0;
+            int recordSize;
+            for (ushort i = 0; i < _recordCount; i++)
+            {
+                recordSize = GetRecordSize(i);
+                if (recordSize == Constants.FORWARDING_MARKER)
+                {
+                    recordSize = Constants.FORWARDING_RID_SIZE;
+                }
+                dataOccupiedSpace += recordSize;
+            }
+
+            return Constants.PAGE_SIZE - Constants.PAGE_HEADER_SIZE - (Constants.PAGE_SLOT_SIZE * _recordCount) - dataOccupiedSpace;
+        }
+
+        private readonly void Compact()
+        {
+            ushort currentSlotIndex;
+            ushort currentRecordSize;
+            ushort currentRecordOffset;
+            ushort newOffset = Constants.PAGE_SIZE;
+            var data = new byte[Constants.PAGE_SIZE];
+
+            // Copio l'header e la directory degli slot nella nuova pagina
+            _data[..(Constants.PAGE_HEADER_SIZE + (Constants.PAGE_SLOT_SIZE * _recordCount))].CopyTo(data.AsSpan(0, Constants.PAGE_HEADER_SIZE + (Constants.PAGE_SLOT_SIZE * _recordCount)));
+
+            for (ushort i = 0; i < _recordCount; i++)
+            {
+                currentSlotIndex = i;
+                currentRecordSize = GetRecordSize(currentSlotIndex);
+                currentRecordOffset = GetRecordOffset(currentSlotIndex);
+
+                // Non devo copiare nulla per i record eliminati
+                if (currentRecordSize == 0)
+                {
+                    continue;
+                }
+
+                // L'informazione del forwarded sta nell'area dati e va copiata
+                if (currentRecordSize == Constants.FORWARDING_MARKER)
+                {
+                    currentRecordSize = Constants.FORWARDING_RID_SIZE;
+                }
+
+                // Scrivo il record in fondo e aggiorno l'offset nello slot
+                newOffset = (ushort)(newOffset - currentRecordSize);
+                _data.Slice(currentRecordOffset, currentRecordSize).CopyTo(data.AsSpan(newOffset, currentRecordSize));
+                BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(Constants.PAGE_HEADER_SIZE + (currentSlotIndex * Constants.PAGE_SLOT_SIZE), 2), newOffset);
+            }
+
+            data.CopyTo(_data);
+            SetRecordsOffset(newOffset);
+        }
+
+        private readonly bool TryCompact(int requiredSpace)
+        {
+            if (GetTotalFreeSpace() >= requiredSpace)
+            {
+                Compact();
+                return true;
+            }
+
+            return false;
         }
         #endregion
 
@@ -118,12 +185,12 @@ namespace RDS.Database.Console.Services
 
             var index = _recordCount;
 
-            if (GetContiguousFreeSpace() < data.Length + Constants.PAGE_SLOT_SIZE)
+            if (GetContiguousFreeSpace() < data.Length + Constants.PAGE_SLOT_SIZE && !TryCompact(data.Length + Constants.PAGE_SLOT_SIZE))
             {
                 return -1;
             }
 
-            var newRecordOffset = (ushort)(GetNextRecordOffset() - data.Length);
+            var newRecordOffset = (ushort)(GetDataAreaEndOffset() - data.Length);
             var dataSize = (ushort)data.Length;
 
             // Scrivo lo slot 
@@ -154,8 +221,7 @@ namespace RDS.Database.Console.Services
 
             if (recordSize == Constants.FORWARDING_MARKER)
             {
-                // TODO: decidere come segnalare il forwarding al chiamante
-                throw new ApplicationException("Forwarding");
+                throw new ApplicationException("Il record è stato migrato");
             }
 
             return _data.Slice(GetRecordOffset(index), recordSize);
@@ -226,11 +292,11 @@ namespace RDS.Database.Console.Services
                 return true;
             }
 
-            // Se è più grande ma c'è abbastanza spazio nella pagina, lo sposto 
-            if (GetContiguousFreeSpace() >= data.Length)
+            // Se è più grande ma c'è abbastanza spazio nella pagina, lo sposto (faccio il check anche dopo aver compattato)
+            if (GetContiguousFreeSpace() >= data.Length || TryCompact(data.Length))
             {
                 // Scrivo nello spazio libero, partendo dalla fine verso l'inizio (come in Insert)
-                var newRecordOffset = (ushort)(GetNextRecordOffset() - data.Length);
+                var newRecordOffset = (ushort)(GetDataAreaEndOffset() - data.Length);
                 data.CopyTo(_data.Slice(newRecordOffset, data.Length));
 
                 // Aggiorno lo slot esistente: il vecchio indice continua a puntare al dato, ora spostato
@@ -249,19 +315,35 @@ namespace RDS.Database.Console.Services
             CheckValidIndex(index);
 
             var existingRecordSize = (ushort)GetRecordSize(index);
+            bool canWrite = false;
+            ushort offset = 0;
 
             if (existingRecordSize >= Constants.FORWARDING_RID_SIZE)
             {
-                SetRecordSize(index, Constants.FORWARDING_MARKER);
-                var offset = GetRecordOffset(index);
-                BinaryPrimitives.WriteUInt32LittleEndian(_data.Slice(offset, 4), (uint)identifier.PageIndex);
-                BinaryPrimitives.WriteUInt16LittleEndian(_data.Slice(offset + 4, 2), (ushort)identifier.SlotIndex);
+                offset = GetRecordOffset(index);
+                canWrite = true;
             }
-            else
+            else if (TryCompact(Constants.FORWARDING_RID_SIZE))
             {
-                // TODO: compatta + eventualmente segnala al chiamante nel caso peggiore
-                throw new NotImplementedException();
+                offset = (ushort)(GetDataAreaEndOffset() - Constants.FORWARDING_RID_SIZE);
+                SetRecordOffset(index, offset);
+
+                // Sto scrivendo in fondo alla pagina
+                SetRecordsOffset(offset);
+                canWrite = true;
             }
+
+            if (!canWrite || offset == 0)
+            {
+                throw new InvalidOperationException("Non c'è spazio per il rid della migrazione!");
+            }
+
+            // Marco il record come migrato con la costante al posto della size
+            SetRecordSize(index, Constants.FORWARDING_MARKER);
+
+            // Scrivo all'offset del record, nell'area dati, il rid ricevuto in input
+            BinaryPrimitives.WriteUInt32LittleEndian(_data.Slice(offset, 4), (uint)identifier.PageIndex);
+            BinaryPrimitives.WriteUInt16LittleEndian(_data.Slice(offset + 4, 2), (ushort)identifier.SlotIndex);
         }
     }
 }

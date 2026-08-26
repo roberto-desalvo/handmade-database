@@ -70,7 +70,7 @@ namespace RDS.Database.Console.Services
         public int AllocateNewPage()
         {
             Span<byte> buffer = stackalloc byte[Constants.PAGE_SIZE];
-            var pageIndex = PagesCount; // Leggo una volta sola per evitare problemi di concorrenza
+            var pageIndex = PagesCount; 
             long offset = (long)pageIndex * Constants.PAGE_SIZE;
             RandomAccess.Write(_handle, buffer, offset);
             return pageIndex;

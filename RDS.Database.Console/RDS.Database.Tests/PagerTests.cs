@@ -17,8 +17,22 @@ namespace RDS.Database.Tests
 
         public void Dispose()
         {
-            if (File.Exists(_path))
+            if (!File.Exists(_path))
             {
+                return;
+            }
+
+            try
+            {
+                File.Delete(_path);
+            }
+            catch (IOException)
+            {
+                // Alcuni test provocano un'eccezione nel costruttore di Pager dopo che l'handle sul
+                // file è già stato aperto: non essendoci un oggetto da disporre, l'handle viene
+                // rilasciato solo alla finalizzazione. Forziamo la GC per poter cancellare il file.
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
                 File.Delete(_path);
             }
         }
@@ -114,6 +128,56 @@ namespace RDS.Database.Tests
 
                 Assert.Equal(toWrite, read);
             }
+        }
+
+        [Fact]
+        public void Constructor_WithNullOrEmptyPath_ShouldThrow()
+        {
+            Assert.Throws<ArgumentNullException>(() => new Pager(null!));
+            Assert.Throws<ArgumentNullException>(() => new Pager(string.Empty));
+            Assert.Throws<ArgumentNullException>(() => new Pager("   "));
+        }
+
+        [Fact]
+        public void Constructor_WhenFileSizeIsNotMultipleOfPageSize_ShouldThrow()
+        {
+            File.WriteAllBytes(_path, new byte[100]);
+
+            Assert.Throws<IOException>(() => new Pager(_path));
+        }
+
+        [Fact]
+        public void AllocateNewPage_ShouldReturnSequentialIndicesAndIncreasePagesCount()
+        {
+            using var pager = new Pager(_path);
+
+            Assert.Equal(0, pager.PagesCount);
+
+            var first = pager.AllocateNewPage();
+            Assert.Equal(0, first);
+            Assert.Equal(1, pager.PagesCount);
+
+            var second = pager.AllocateNewPage();
+            Assert.Equal(1, second);
+            Assert.Equal(2, pager.PagesCount);
+        }
+
+        [Fact]
+        public void Read_WithBufferOfWrongSize_ShouldThrow()
+        {
+            using var pager = new Pager(_path);
+            pager.AllocateNewPage();
+
+            Assert.Throws<ArgumentException>(() => pager.Read(0, new byte[10]));
+        }
+
+        [Fact]
+        public void Write_WithBufferOfWrongSize_ShouldThrow()
+        {
+            using var pager = new Pager(_path);
+            pager.AllocateNewPage();
+
+            Assert.Throws<ArgumentException>(() => pager.Write(0, new byte[10]));
         }
     }
 }

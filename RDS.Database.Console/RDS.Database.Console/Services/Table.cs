@@ -87,7 +87,7 @@ namespace RDS.Database.Console.Services
 
             var page = Utils.GetPage(_pager, pageIndex);
 
-            if (page.IsForwarding(slotIndex))
+            while (page.IsForwarding(slotIndex))
             {
                 var newRid = page.ReadForwarding(slotIndex);
                 page = Utils.GetPage(_pager, newRid.PageIndex);
@@ -144,7 +144,7 @@ namespace RDS.Database.Console.Services
                     var newPage = new Page(new byte[Constants.PAGE_SIZE]);
                     newPage.Init();
                     currentPage.SetNextPageIndex(newPageIndex);
-                    _pager.Write(_lastPageIndex, currentPage.Data);
+                    _pager.Write(currentPageIndex, currentPage.Data);
 
                     currentPage = newPage;
                     currentPageIndex = newPageIndex;

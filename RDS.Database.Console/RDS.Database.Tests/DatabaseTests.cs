@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using RDS.Database.Console.Services;
 using RDS.Database.Console.Services.Models;
+using RDS.Database.Console.Services.Utilities;
 using Xunit;
 
 namespace RDS.Database.Tests
@@ -55,10 +56,75 @@ namespace RDS.Database.Tests
 
         public void Dispose()
         {
-            if (File.Exists(_path))
+            if (!File.Exists(_path))
+            {
+                return;
+            }
+
+            try
             {
                 File.Delete(_path);
             }
+            catch (IOException)
+            {
+                // Alcuni test provocano un'eccezione nel costruttore di Database dopo che il Pager
+                // sottostante ha già aperto l'handle sul file: non essendoci un oggetto da disporre,
+                // l'handle viene rilasciato solo alla finalizzazione. Forziamo la GC per cancellare il file.
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                File.Delete(_path);
+            }
+        }
+
+        [Fact]
+        public void Constructor_OnNewFile_ShouldInitializeHeaderAndFirstDataPage()
+        {
+            using var database = new Console.Services.Database(_path);
+
+            Assert.True(database.Table.FirstPageIndex > 0);
+
+            var rid = database.Table.Insert(new byte[] { 1, 2, 3 });
+            Assert.Equal(new byte[] { 1, 2, 3 }, database.Table.Read(rid).ToArray());
+        }
+
+        [Fact]
+        public void Constructor_WhenMagicNumberIsCorrupted_ShouldThrow()
+        {
+            using (var database = new Console.Services.Database(_path))
+            {
+                database.Sync();
+            }
+
+            using (var pager = new Pager(_path))
+            {
+                var buffer = new byte[Constants.PAGE_SIZE];
+                pager.Read(0, buffer);
+                buffer[0] = 0xFF;
+                pager.Write(0, buffer);
+                pager.Sync();
+            }
+
+            Assert.Throws<InvalidDataException>(() => new Console.Services.Database(_path));
+        }
+
+        [Fact]
+        public void Constructor_WhenTableIndexInHeaderIsOutOfRange_ShouldThrow()
+        {
+            using (var database = new Console.Services.Database(_path))
+            {
+                database.Sync();
+            }
+
+            using (var pager = new Pager(_path))
+            {
+                var buffer = new byte[Constants.PAGE_SIZE];
+                pager.Read(0, buffer);
+                BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(4, 4), 999); // pagina inesistente
+                pager.Write(0, buffer);
+                pager.Sync();
+            }
+
+            Assert.Throws<InvalidDataException>(() => new Console.Services.Database(_path));
         }
 
         [Fact]
