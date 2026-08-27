@@ -28,11 +28,16 @@ namespace RDS.Database.Console.Services.Utilities
         public const int PAGE_SLOT_SIZE = 4;
 
         public const char PAGE_TYPE_DATA = 'D';
-        public const char PAGE_TYPE_INDEX = 'I';
+        public const char PAGE_TYPE_INDEX_INTERNAL = 'I';
+        public const char PAGE_TYPE_INDEX_LEAF = 'L';
+
+        public const int INDEX_INTERNAL_HEADER_SIZE = 4;
+        public const int INDEX_KEY_SIZE = 4;
+        public const int INDEX_POINTER_SIZE = 4;
+        public const int INDEX_INTERNAL_FANAOUT = 512; // Numero massimo di figli
         #endregion
 
         public static int SingleRecordMaxSize => PAGE_SIZE - PAGE_HEADER_SIZE - PAGE_SLOT_SIZE;
-
 
         public static readonly byte[] MAGIC_NUMBER = [0x44, 0x42, 0x46, 0x31]; // DBF1
 

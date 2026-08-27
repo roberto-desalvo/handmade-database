@@ -9,11 +9,36 @@ namespace RDS.Database.Console.Services
     // HEADER    SLOT DIRECTORY               (FREE SPACE)                     RECORDS
     // * * * * | * * * * * * * * - - - - - - - - - - - - - - - - - - - * * * * * * * *
     //
-
-    public ref struct Page
+    // HEADER: 
+    // - 1 byte: tipo di pagina (D = Data)
+    // - 2 byte: numero di record / slot
+    // - 2 byte: offset fine area dati
+    // - 4 byte: indice prossima pagina (se non c'è: zero)
+    //
+    // SLOT DIRECTORY:
+    // - 2 byte: offset record 1
+    // - 2 byte: lunghezza record 1 (eliminato, vale zero)
+    // - 2 byte: offset record 2
+    // - 2 byte: lunghezza record 2 (migrato: vale 0xFFFF, cioè 65535)
+    // - ...
+    // - 2 byte: offset record n
+    // - 2 byte: lunghezza record n
+    //
+    //
+    // FREE SPACE:
+    // 
+    //   
+    // RECORDS:
+    // - record n
+    // ...
+    // - record 2 (migrato: contiene il RID del record migrato)
+    //      - 4 byte: indice pagina record migrato
+    //      - 2 byte: indice slot record migrato
+    // - record 1 (spazio libero perchè il record è eliminato e lo slot è marcato con la tombstone)
+    public readonly ref struct Page
     {
         private readonly ushort _recordCount => BinaryPrimitives.ReadUInt16LittleEndian(_data.Slice(1, 2));
-        private Span<byte> _data;
+        private readonly Span<byte> _data;
         public readonly ReadOnlySpan<byte> Data => _data;
 
         #region Private Methods
@@ -151,7 +176,7 @@ namespace RDS.Database.Console.Services
 
         public readonly void CheckInitialized()
         {
-            if (_data[0] != (byte)Constants.PAGE_TYPE_DATA && _data[0] != (byte)Constants.PAGE_TYPE_INDEX)
+            if (_data[0] != (byte)Constants.PAGE_TYPE_DATA && _data[0] != (byte)Constants.PAGE_TYPE_INDEX_INTERNAL)
             {
                 throw new InvalidOperationException("La pagina non è inizializzata");
             }
