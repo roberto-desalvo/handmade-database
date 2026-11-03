@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="470" viewBox="0 0 680 470" role="img" font-family="Helvetica, Arial, sans-serif">
+  <title>Slotted page</title>
+  <desc>Pagina da 8192 byte: header di 12 byte, directory degli slot che cresce verso il fondo, spazio libero, record che crescono verso l'inizio. Esempio con due record.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#534AB7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect width="680" height="470" fill="#FFFFFF"/>
+
+  <!-- Header: 4 campi -->
+  <g fill="#F1EFE8" stroke="#888780" stroke-width="0.8">
+    <rect x="140" y="40" width="260" height="24"/>
+    <rect x="140" y="64" width="260" height="24"/>
+    <rect x="140" y="88" width="260" height="24"/>
+    <rect x="140" y="112" width="260" height="24"/>
+  </g>
+  <g font-size="12" fill="#444441" text-anchor="middle" dominant-baseline="central">
+    <text x="270" y="52">page_id = 0</text>
+    <text x="270" y="76">next_page_id = nessuna</text>
+    <text x="270" y="100">num_slots = 2</text>
+    <text x="270" y="124">free_space_end = 8178</text>
+  </g>
+
+  <!-- Directory degli slot -->
+  <g fill="#EEEDFE" stroke="#534AB7" stroke-width="0.8">
+    <rect x="140" y="136" width="260" height="28"/>
+    <rect x="140" y="164" width="260" height="28"/>
+  </g>
+  <g font-size="12" fill="#3C3489" text-anchor="middle" dominant-baseline="central">
+    <text x="270" y="150">slot 0: offset 8188, length 4</text>
+    <text x="270" y="178">slot 1: offset 8178, length 10</text>
+  </g>
+
+  <!-- Spazio libero -->
+  <rect x="140" y="192" width="260" height="160" fill="#FFFFFF" stroke="#888780" stroke-width="0.8" stroke-dasharray="5 4"/>
+  <g font-size="12" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">
+    <text x="270" y="210">↓ la directory cresce verso il fondo</text>
+    <text x="270" y="264" font-size="14" font-weight="bold" fill="#444441">Spazio libero</text>
+    <text x="270" y="284">8178 − 20 = 8158 byte</text>
+    <text x="270" y="334">↑ i record crescono verso l'inizio</text>
+  </g>
+
+  <!-- Record -->
+  <g fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.8">
+    <rect x="140" y="352" width="260" height="28"/>
+    <rect x="140" y="380" width="260" height="28"/>
+  </g>
+  <g font-size="12" fill="#085041" text-anchor="middle" dominant-baseline="central">
+    <text x="270" y="366">record 1: "beta-gamma" (10 byte)</text>
+    <text x="270" y="394">record 0: "alfa" (4 byte)</text>
+  </g>
+
+  <!-- Offset a sinistra -->
+  <g font-size="12" fill="#5F5E5A" text-anchor="end" dominant-baseline="central">
+    <text x="130" y="40">0</text>
+    <text x="130" y="64">4</text>
+    <text x="130" y="88">8</text>
+    <text x="130" y="112">10</text>
+    <text x="130" y="136">12</text>
+    <text x="130" y="164">16</text>
+    <text x="130" y="192">20</text>
+    <text x="130" y="352">8178</text>
+    <text x="130" y="380">8188</text>
+    <text x="130" y="408">8192</text>
+  </g>
+  <text x="40" y="22" font-size="12" fill="#5F5E5A">Offset (byte)</text>
+
+  <!-- Frecce slot → record -->
+  <g stroke="#534AB7" stroke-width="1.2" fill="none">
+    <path d="M400 150 L440 150 L440 394 L403 394" marker-end="url(#arrow)"/>
+    <path d="M400 178 L420 178 L420 366 L403 366" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- Etichette delle sezioni a destra -->
+  <g stroke="#888780" stroke-width="0.8">
+    <line x1="458" y1="42" x2="458" y2="134"/>
+    <line x1="458" y1="138" x2="458" y2="190"/>
+    <line x1="458" y1="194" x2="458" y2="350"/>
+    <line x1="458" y1="354" x2="458" y2="406"/>
+  </g>
+  <g font-size="12" dominant-baseline="central">
+    <text x="468" y="82" font-size="14" font-weight="bold" fill="#444441">Header</text>
+    <text x="468" y="100" fill="#5F5E5A">12 byte</text>
+    <text x="468" y="156" font-size="14" font-weight="bold" fill="#3C3489">Directory degli slot</text>
+    <text x="468" y="174" fill="#534AB7">4 byte per slot</text>
+    <text x="468" y="272" font-size="14" font-weight="bold" fill="#444441">Spazio libero</text>
+    <text x="468" y="370" font-size="14" font-weight="bold" fill="#085041">Record</text>
+    <text x="468" y="388" fill="#0F6E56">dalla fine della pagina</text>
+  </g>
+
+  <text x="40" y="440" font-size="12" fill="#5F5E5A">Esempio: pagina 0 dopo insert("alfa") e insert("beta-gamma"). Proporzioni non in scala.</text>
+</svg>
